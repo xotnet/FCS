@@ -3,6 +3,10 @@
  Password requirements /
 	1. Minimum password length is 6 characters
 	2. The password must not contain repetitive obvious combinations
+ Lib usage /
+	1. Encrypt: fcsEncrypt(char* data, char* key)
+	2. Decrypt: fcsDecrypt(char* data, char* key)
+	?. The data buffer will be overwritten.
 
 */
 

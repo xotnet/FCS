@@ -4,23 +4,14 @@
 	1. Minimum password length is 6 characters
 	2. The password must not contain repetitive obvious combinations
  Lib usage /
-	1. Encrypt: fcsEncrypt(char* data, char* key)
-	2. Decrypt: fcsDecrypt(char* data, char* key)
+	1. Encrypt: fcsEncrypt(char* data, char* key, int dataLength)
+	2. Decrypt: fcsDecrypt(char* data, char* key, int dataLength)
 	?. The data buffer will be overwritten.
 
 */
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-
-uint16_t getLen(char* str) {
-	uint16_t res = 0;
-	while (*(str+res) != 0) {
-		res++;
-	}
-	return res;
-}
 
 uint8_t countBits(char ch) {
 	uint8_t res = 0;
@@ -32,19 +23,32 @@ uint8_t countBits(char ch) {
 	return res;
 }
 
-void blockShuffle(unsigned char* data, unsigned char* key, uint8_t ed /*0-shuffle/1-deshuffle*/ ) {
+int8_t cmpStr(char* str1, char* str2, uint16_t len) {
+	for (int i = 0; i<len; i++) {
+		if (*(str1+i) != *(str2+i)) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
+void copyStr(char* str, char* copy, uint16_t len) {
+	for (int i = 0; i<len; i++) {
+		*(copy+i) = *(str+1);
+	}
+}
+
+void blockShuffle(unsigned char* data, unsigned char* key, uint8_t ed /*0-shuffle/1-deshuffle*/, uint16_t dataLen, uint16_t keyLen ) {
 
 	// hello world! -> o!hodedl rlwl -> hello world!
 
-	uint16_t keyLen = getLen(key);
 	uint16_t cleanKL = keyLen;
 	if (keyLen % 2 != 0) {cleanKL = keyLen-1;}
-	uint16_t dataLen = getLen(data);
 	uint8_t* blocksToSh = (uint8_t*)malloc(cleanKL);
 	for (int i = 0; i<cleanKL; i++) { // get each key's letter and count how many 1 in bytes
 		blocksToSh[i] = countBits(key[i]) % dataLen;
-		for (int e = 0; e+i<cleanKL && countBits(key[i+e]) > 1; e++) {
-			blocksToSh[i] = (blocksToSh[i] + countBits(key[i+e])) % dataLen;
+		for (int e = 0; e+i<cleanKL && countBits(key[i+e]) > 0; e++) {
+			blocksToSh[i] = (blocksToSh[i] * countBits(key[i+e])) % dataLen;
 		}
 	}
 	// shuffle blocks
@@ -69,9 +73,8 @@ void blockShuffle(unsigned char* data, unsigned char* key, uint8_t ed /*0-shuffl
 	}
 }
 
-void sharedXor(unsigned char* data, unsigned char* key) {
-	uint16_t dataLen = getLen(data);
-	uint16_t keyLen = getLen(key) % 32; // sharedXor passLen limit is 32
+void sharedXor(unsigned char* data, unsigned char* key, uint16_t dataLen, uint16_t keyLen) {
+	keyLen = keyLen % 32; // sharedXor passLen limit is 32
 	for (int i = 0; i<dataLen; i++) {
 		for (int e = 0; e<keyLen; e++) {
 			*(data+i) = *(data+i) ^ *(key+e);
@@ -79,35 +82,79 @@ void sharedXor(unsigned char* data, unsigned char* key) {
 	}
 }
 
-void privateXor(unsigned char* data, unsigned char* key) {
-	uint16_t dataLen = getLen(data);
-	uint16_t keyLen = getLen(key);
-	unsigned char* keyK = (unsigned char*)malloc(dataLen+4);
-	for (int i = 0; i<dataLen+4; i++) {
-		keyK[i] = key[i%keyLen];
+void privateXor(unsigned char* data, unsigned char* key, uint16_t dataLen, uint16_t keyLen) {
+	unsigned char* keyMask = (unsigned char*)malloc(dataLen+4);
+	for (uint16_t i = 0; i<dataLen+4; i++) { // Fill keyMask key's copies
+		keyMask[i] = key[i%keyLen];
 	}
-	uint16_t e = 0;
-	for (int i = 0; i<dataLen; i++) {
-		if (countBits(*(keyK+i)) > 2) {
-			*(keyK+i) = *(keyK+i) ^ *(keyK+i) ^ *(keyK+i+1) ^ *(keyK+i+2); // invert and xor with next byte
+	for (uint16_t i = 0; i<dataLen; i++) {
+		*(data+i) = *(data+i) ^ *(keyMask+i);
+		if (countBits(keyMask[i]) % 2 == 0) {
+			*(data+i) = *(data+i) ^ *(keyMask+i+1);
 		}
-		e = (i+e) % keyLen;
-		*(data+i) = *(data+i) ^ *(keyK+i) ^ *(keyK+i+e);
+		if (countBits(keyMask[i]) > 3) {
+			*(data+i) = *(data+i) ^ *(keyMask+i+2);
+		}
 	}
-	free(keyK);
+	free(keyMask);
 }
 
-void fcsEncrypt(unsigned char* data, unsigned char* key) {
+void fcsCryptoError(char* data, uint16_t dataLen) {
+	for (int i = 0; i<dataLen; i++) {
+		*(data+i) = 0;
+	}
+}
+
+int8_t fcsEncrypt(unsigned char* data, unsigned char* key, uint16_t dataLen, uint16_t keyLen) {
 	// shuffle blocks -> shared xor -> private xor
-	uint16_t dataLen = getLen(data);
-	blockShuffle(data, key, 0);
-	sharedXor(data, key);
-	privateXor(data, key);
+	unsigned char* dataCopy = (unsigned char*)malloc(dataLen);
+	copyStr(data, dataCopy, dataLen);
+
+	blockShuffle(data, key, 0, dataLen, keyLen);
+	if (cmpStr(data, dataCopy, dataLen) == 0) {
+		fcsCryptoError(data, dataLen);
+		return -1;
+	}
+	copyStr(data, dataCopy, dataLen);
+
+	sharedXor(data, key, dataLen, keyLen);
+	if (cmpStr(data, dataCopy, dataLen) == 0) {
+    fcsCryptoError(data, dataLen);
+    return -1;
+  }
+	copyStr(data, dataCopy, dataLen);
+
+	privateXor(data, key, dataLen, keyLen);
+	if (cmpStr(data, dataCopy, dataLen) == 0) {
+    fcsCryptoError(data, dataLen);
+    return -1;
+  }
+	return 0;
 }
 
-void fcsDecrypt(unsigned char* data, unsigned char* key) {
+int8_t fcsDecrypt(unsigned char* data, unsigned char* key, uint16_t dataLen, uint16_t keyLen) {
 	// private xor -> shared xor -> shuffle blocks
-	privateXor(data, key);
-	sharedXor(data, key);
-	blockShuffle(data, key, 1);
+	unsigned char* dataCopy = (unsigned char*)malloc(dataLen);
+  copyStr(data, dataCopy, dataLen);
+
+  privateXor(data, key, dataLen, keyLen);
+  if (cmpStr(data, dataCopy, dataLen) == 0) {
+    fcsCryptoError(data, dataLen);
+    return -1;
+  }
+  copyStr(data, dataCopy, dataLen);
+
+  sharedXor(data, key, dataLen, keyLen);
+  if (cmpStr(data, dataCopy, dataLen) == 0) {
+    fcsCryptoError(data, dataLen);
+    return -1;
+  }
+  copyStr(data, dataCopy, dataLen);
+
+  blockShuffle(data, key, 1, dataLen, keyLen);
+  if (cmpStr(data, dataCopy, dataLen) == 0) {
+    fcsCryptoError(data, dataLen);
+    return -1;
+  }
+  return 0;
 }

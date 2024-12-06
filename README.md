@@ -12,3 +12,5 @@ The following encryption methods are used: **Character shuffling; Generic xor (u
 **Lib usage**
   1. Encrypt: **fcsEncrypt**(char* **data**, char* **key**, int **dataLength**, int **keyLength**)
   2. Decrypt: **fcsDecrypt**(char* **data**, char* **key**, int **dataLength**, int **keyLength**)
+
+[Download library header](https://github.com/xotnet/FCS/releases/latest/download/fcs.h)

@@ -4,8 +4,8 @@
 	1. Minimum password length is 6 characters
 	2. The password must not contain repetitive obvious combinations
  Lib usage /
-	1. Encrypt: fcsEncrypt(char* data, char* key, int dataLength)
-	2. Decrypt: fcsDecrypt(char* data, char* key, int dataLength)
+	1. Encrypt: fcsEncrypt(char* data, char* key, int dataLength, int keyLength)
+	2. Decrypt: fcsDecrypt(char* data, char* key, int dataLength, int keyLength)
 	?. The data buffer will be overwritten.
 
 */

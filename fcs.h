@@ -48,7 +48,8 @@ void blockShuffle(unsigned char* data, unsigned char* key, uint8_t ed /*0-shuffl
 	for (int i = 0; i<cleanKL; i++) { // get each key's letter and count how many 1 in bytes
 		blocksToSh[i] = countBits(key[i]) % dataLen;
 		for (int e = 0; e+i<cleanKL && countBits(key[i+e]) > 0; e++) {
-			blocksToSh[i] = (blocksToSh[i] * countBits(key[i+e])) % dataLen;
+			uint16_t ieCount = countBits(key[i+e]);
+			blocksToSh[i] = (blocksToSh[i] * ieCount + dataLen-ieCount) % dataLen;
 		}
 	}
 	// shuffle blocks
@@ -94,6 +95,12 @@ void privateXor(unsigned char* data, unsigned char* key, uint16_t dataLen, uint1
 		}
 		if (countBits(keyMask[i]) > 3) {
 			*(data+i) = *(data+i) ^ *(keyMask+i+2);
+		}
+		if (countBits(keyMask[i] > 4)) {
+			*(data+i) = *(data+i) ^ *(keyMask+i+3);
+		}
+		if (countBits(keyMask[i]) == 4) {
+			*(data+i) = *(data+i) ^ *(keyMask+i+4);
 		}
 	}
 	free(keyMask);

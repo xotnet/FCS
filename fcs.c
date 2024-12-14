@@ -37,16 +37,18 @@ void copyStr(char* str, char* copy, uint32_t len) {
 	}
 }
 
-void blockShuffle(unsigned char* data, unsigned char* key, uint8_t ed /*0-shuffle/1-deshuffle*/, uint32_t dataLen, uint32_t keyLen ) {
+void fcsLettersShuffle(char* data, char* key, uint8_t ed /*0-encrypt/1-decrypt*/, uint32_t dataLen, uint32_t keyLen ) {
 	// hello world! -> o!hodedl rlwl -> hello world!
 	uint32_t cleanKL = keyLen;
 	if (keyLen % 2 != 0) {cleanKL = keyLen-1;}
 	uint8_t* blocksToSh = (uint8_t*)malloc(cleanKL);
-	for (uint32_t i = 0; i<cleanKL; i++) { // get each key's letter and count how many 1 in bytes
+	for (uint32_t i = 0; i<cleanKL; i++) {
 		blocksToSh[i] = countBits(key[i]) % dataLen;
-		for (uint32_t e = 0; e+i<cleanKL && countBits(key[i+e]) > 0; e++) {
+		uint32_t g = 0;
+		for (uint32_t e = 0; e+i<cleanKL && countBits(key[i+e]) > 0 && g < 32; e++) {
 			uint8_t ieCount = countBits(key[i+e]);
 			blocksToSh[i] = (blocksToSh[i] * ieCount + dataLen-ieCount) % dataLen;
+			g++;
 		}
 	}
 	// shuffle blocks
@@ -71,8 +73,8 @@ void blockShuffle(unsigned char* data, unsigned char* key, uint8_t ed /*0-shuffl
 	}
 }
 
-void sharedXor(unsigned char* data, unsigned char* key, uint32_t dataLen, uint32_t keyLen) {
-	keyLen = keyLen % 32; // sharedXor passLen limit is 32
+void fcsSharedXor(char* data, char* key, uint32_t dataLen, uint32_t keyLen) {
+	keyLen = keyLen % 32; // fcsSharedXor passLen limit is 32
 	for (uint32_t i = 0; i<dataLen; i++) {
 		for (uint32_t e = 0; e<keyLen; e++) {
 			*(data+i) = *(data+i) ^ *(key+e);
@@ -80,8 +82,8 @@ void sharedXor(unsigned char* data, unsigned char* key, uint32_t dataLen, uint32
 	}
 }
 
-void privateXor(unsigned char* data, unsigned char* key, uint32_t dataLen, uint32_t keyLen) {
-	unsigned char* keyMask = (unsigned char*)malloc(dataLen+4);
+void fcsPrivateXor(char* data, char* key, uint32_t dataLen, uint32_t keyLen) {
+	char* keyMask = (char*)malloc(dataLen+4);
 	for (uint32_t i = 0; i<dataLen+4; i++) { // Fill keyMask key's copies
 		keyMask[i] = key[i%keyLen];
 	}
@@ -103,32 +105,60 @@ void privateXor(unsigned char* data, unsigned char* key, uint32_t dataLen, uint3
 	free(keyMask);
 }
 
+void fcsMathCrypt(char* data, char* key, uint8_t ed, uint32_t dataLen, uint32_t keyLen) {
+	int8_t seed = 0;
+	int8_t buf = 0;
+	for (uint32_t i = 0; i<dataLen; i++) {
+		uint32_t g = 0;
+		do {
+			buf = countBits(key[g % keyLen]);
+			seed = seed + buf;
+			g++;
+		} while (buf > 1 && g < 32);
+		if ((key[i%keyLen] | 0b00000001) == 0b00000001) {
+			seed = -seed;
+		}
+		if (ed == 0) {
+			*(data+i) = *(data+i) + seed;
+		} else {
+			*(data+i) = *(data+i) - seed;
+		}
+	}
+}
+
 void fcsCryptoError(char* data, uint32_t dataLen) {
 	for (uint32_t i = 0; i<dataLen; i++) {
 		*(data+i) = 0;
 	}
 }
 
-int8_t fcsEncrypt(unsigned char* data, unsigned char* key, uint32_t dataLen, uint32_t keyLen) {
+int8_t fcsEncrypt(char* data, char* key, uint32_t dataLen, uint32_t keyLen) {
 	// shuffle blocks -> shared xor -> private xor
-	unsigned char* dataCopy = (unsigned char*)malloc(dataLen);
+	char* dataCopy = (char*)malloc(dataLen);
 	copyStr(data, dataCopy, dataLen);
 
-	blockShuffle(data, key, 0, dataLen, keyLen);
+	fcsLettersShuffle(data, key, 0, dataLen, keyLen);
 	if (cmpStr(data, dataCopy, dataLen) == 0) {
 		fcsCryptoError(data, dataLen);
 		return -1;
 	}
 	copyStr(data, dataCopy, dataLen);
 
-	sharedXor(data, key, dataLen, keyLen);
+	fcsSharedXor(data, key, dataLen, keyLen);
 	if (cmpStr(data, dataCopy, dataLen) == 0) {
     fcsCryptoError(data, dataLen);
     return -1;
   }
 	copyStr(data, dataCopy, dataLen);
 
-	privateXor(data, key, dataLen, keyLen);
+	fcsPrivateXor(data, key, dataLen, keyLen);
+	if (cmpStr(data, dataCopy, dataLen) == 0) {
+    fcsCryptoError(data, dataLen);
+    return -1;
+  }
+  copyStr(data, dataCopy, dataLen);
+
+  fcsMathCrypt(data, key, 0, dataLen, keyLen);
 	if (cmpStr(data, dataCopy, dataLen) == 0) {
     fcsCryptoError(data, dataLen);
     return -1;
@@ -136,25 +166,32 @@ int8_t fcsEncrypt(unsigned char* data, unsigned char* key, uint32_t dataLen, uin
 	return 0;
 }
 
-int8_t fcsDecrypt(unsigned char* data, unsigned char* key, uint32_t dataLen, uint32_t keyLen) {
+int8_t fcsDecrypt(char* data, char* key, uint32_t dataLen, uint32_t keyLen) {
 	// private xor -> shared xor -> shuffle blocks
-	unsigned char* dataCopy = (unsigned char*)malloc(dataLen);
+	char* dataCopy = (char*)malloc(dataLen);
   copyStr(data, dataCopy, dataLen);
 
-  privateXor(data, key, dataLen, keyLen);
+  fcsMathCrypt(data, key, 1, dataLen, keyLen);
+	if (cmpStr(data, dataCopy, dataLen) == 0) {
+    fcsCryptoError(data, dataLen);
+    return -1;
+  }
+  copyStr(data, dataCopy, dataLen);
+
+  fcsPrivateXor(data, key, dataLen, keyLen);
   if (cmpStr(data, dataCopy, dataLen) == 0) {
     fcsCryptoError(data, dataLen);
     return -1;
   }
   copyStr(data, dataCopy, dataLen);
 
-  sharedXor(data, key, dataLen, keyLen);
+  fcsSharedXor(data, key, dataLen, keyLen);
   if (cmpStr(data, dataCopy, dataLen) == 0) {
     fcsCryptoError(data, dataLen);
     return -1;
   }
   copyStr(data, dataCopy, dataLen);
-  blockShuffle(data, key, 1, dataLen, keyLen);
+  fcsLettersShuffle(data, key, 1, dataLen, keyLen);
   if (cmpStr(data, dataCopy, dataLen) == 0) {
     fcsCryptoError(data, dataLen);
     return -1;
